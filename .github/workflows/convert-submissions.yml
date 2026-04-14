@@ -107,12 +107,12 @@ jobs:
 
             docker run --rm \
               --platform linux/amd64 \
-              -v "$PWD/submissions/extracted/$ID":/app/input:ro \
-              -v "$PWD/ci/snippets":/app/snippets:ro \
-              -v "$PWD/ci/utils":/app/utils:ro \
-              -v "$PWD/outputs/$ID/owl_init":/app/output \
-              -v "$PWD/outputs/$ID/nl":/app/nl_output \
-              -v "$PWD/outputs/$ID/log-shacl":/app/log-shacl \
+              -v "$GITHUB_WORKSPACE/submissions/extracted/$ID":/app/input:ro \
+              -v "$GITHUB_WORKSPACE/ci/snippets":/app/snippets:ro \
+              -v "$GITHUB_WORKSPACE/ci/utils":/app/utils:ro \
+              -v "$GITHUB_WORKSPACE/outputs/$ID/owl_init":/app/output \
+              -v "$GITHUB_WORKSPACE/outputs/$ID/nl":/app/nl_output \
+              -v "$GITHUB_WORKSPACE/outputs/$ID/log-shacl":/app/log-shacl \
               -e PHS_FILE="${BASE}.yphs" \
               -e NL_FORMAT=html \
               -e GBIF_FLAG=0 \
@@ -214,9 +214,12 @@ jobs:
 
       - name: Materialize -- merge all OWLs -> reason -> annotate -> final KB
         run: |
-          mkdir -p abox kb
+          mkdir -p "$GITHUB_WORKSPACE/abox" "$GITHUB_WORKSPACE/kb" "$GITHUB_WORKSPACE/log-materializer"
 
-          OWL_COUNT=$(find outputs -path "*/owl_init/*.owl" | wc -l)
+          echo "=== Host outputs tree ==="
+          find "$GITHUB_WORKSPACE/outputs" -type f | sort || echo "(outputs dir empty or missing)"
+
+          OWL_COUNT=$(find "$GITHUB_WORKSPACE/outputs" -path "*/owl_init/*.owl" | wc -l)
           echo "Found $OWL_COUNT OWL file(s) across all submissions"
 
           if [[ "$OWL_COUNT" -eq 0 ]]; then
@@ -224,17 +227,16 @@ jobs:
             exit 0
           fi
 
-          mkdir -p log-materializer
           docker run --rm \
             --platform linux/amd64 \
             --entrypoint bash \
-            -v "$PWD/outputs":/app/outputs:ro \
-            -v "$PWD/source_ontologies":/app/source_ontologies:ro \
-            -v "$PWD/ci/utils":/app/utils:ro \
-            -v "$PWD/abox":/app/abox \
-            -v "$PWD/kb":/app/kb \
-            -v "$PWD/log-materializer":/app/log-materializer \
-            -v "$PWD/ci/scripts/materialize.sh":/app/run.sh:ro \
+            -v "$GITHUB_WORKSPACE/outputs":/app/outputs:ro \
+            -v "$GITHUB_WORKSPACE/source_ontologies":/app/source_ontologies:ro \
+            -v "$GITHUB_WORKSPACE/ci/utils":/app/utils:ro \
+            -v "$GITHUB_WORKSPACE/abox":/app/abox \
+            -v "$GITHUB_WORKSPACE/kb":/app/kb \
+            -v "$GITHUB_WORKSPACE/log-materializer":/app/log-materializer \
+            -v "$GITHUB_WORKSPACE/ci/scripts/materialize.sh":/app/run.sh:ro \
             sergeit215/insectkg100-repo:latest \
             /app/run.sh
 
