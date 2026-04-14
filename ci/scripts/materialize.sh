@@ -47,10 +47,10 @@ echo "    → /app/abox/abox-merged.owl"
 echo "--- Step 2: Running materializer (whelk) ---"
 
 materializer file \
-    /app/abox/abox-merged.owl \
-    /app/source_ontologies/tbox.owl \
-    --reasoner whelk \
+    --ontology-file /app/source_ontologies/tbox.owl \
+    --input /app/abox/abox-merged.owl \
     --output /app/abox/abox-whelk-raw.ttl \
+    --reasoner whelk \
     > /app/abox/materializer.log 2>&1
 
 echo "    → /app/abox/abox-whelk-raw.ttl"
