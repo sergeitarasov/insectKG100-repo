@@ -10,7 +10,7 @@ specimen:
     .ott_id: 'ott_id:3328193'
     .gbif_id: 'https://www.gbif.org/species/2'
     .dwc-Catalog_Number:
-        - 'CNCCOLVG00001738'
+        - 'CNCCO'
     .is_a:
         - uberon-male_organism
         - uberon-adult_organism
