@@ -5,3 +5,4 @@
 source_ontologies/*.owl    filter=lfs diff=lfs merge=lfs -text
 kb/*.ttl                   filter=lfs diff=lfs merge=lfs -text
 outputs/**/*-kb.ttl        filter=lfs diff=lfs merge=lfs -text
+abox/*.ttl                 filter=lfs diff=lfs merge=lfs -text

@@ -89,28 +89,30 @@ jobs:
         run: docker pull sergeit215/insectkg100-repo:latest
 
       # -----------------------------------------------------------------------
-      # Convert each .yphs file independently — one Docker run per file
-      # Outputs land in outputs/<id>/<yphs-basename>/
+      # Convert each .yphs in the submission — outputs go to shared dirs:
+      #   outputs/<id>/owl_init/   <- .owl + .xml
+      #   outputs/<id>/nl/         <- .html
+      #   outputs/<id>/log-shacl/  <- .shacl.txt
       # -----------------------------------------------------------------------
       - name: Convert .yphs files
         run: |
           ID="${{ matrix.submission }}"
+          mkdir -p "outputs/$ID/owl_init" "outputs/$ID/nl" "outputs/$ID/log-shacl"
           YPHS_COUNT=0
 
           for yphs in "submissions/extracted/$ID/"*.yphs; do
             [[ -f "$yphs" ]] || { echo "No .yphs files found in $ID"; break; }
             BASE=$(basename "$yphs" .yphs)
             echo "--- Converting: $BASE ---"
-            mkdir -p "outputs/$ID/$BASE"
 
             docker run --rm \
               --platform linux/amd64 \
               -v "$PWD/submissions/extracted/$ID":/app/input:ro \
               -v "$PWD/ci/snippets":/app/snippets:ro \
               -v "$PWD/ci/utils":/app/utils:ro \
-              -v "$PWD/outputs/$ID/$BASE":/app/output \
-              -v "$PWD/outputs/$ID/$BASE":/app/nl_output \
-              -v "$PWD/outputs/$ID/$BASE":/app/log-shacl \
+              -v "$PWD/outputs/$ID/owl_init":/app/output \
+              -v "$PWD/outputs/$ID/nl":/app/nl_output \
+              -v "$PWD/outputs/$ID/log-shacl":/app/log-shacl \
               -e PHS_FILE="${BASE}.yphs" \
               -e NL_FORMAT=html \
               -e GBIF_FLAG=0 \
@@ -128,15 +130,13 @@ jobs:
         run: |
           ID="${{ matrix.submission }}"
           ALL_PASS=true
-
-          for log in "outputs/$ID/"*/*.shacl.txt; do
+          for log in "outputs/$ID/log-shacl/"*.shacl.txt; do
             [[ -f "$log" ]] || continue
             if ! grep -q "^Conforms$" "$log"; then
               echo "::warning file=$log::SHACL non-conformance: $(basename "$log" .shacl.txt)"
               ALL_PASS=false
             fi
           done
-
           $ALL_PASS && echo "All SHACL checks passed for $ID"
 
       # -----------------------------------------------------------------------
@@ -167,8 +167,6 @@ jobs:
             echo "::warning file=$LOG::Inconsistent dataset detected in ${{ matrix.submission }}"
           fi
 
-      # Upload outputs for the finalize job — artifacts expire after 7 days
-      # (permanent copy is committed to git by finalize)
       - name: Upload outputs
         uses: actions/upload-artifact@v4
         with:
@@ -177,7 +175,11 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # Job 3: Collect all outputs, build final KB, commit everything to main
+  # Job 3: Collect ALL submission OWLs -> merge -> materialize -> final KB
+  #   abox/abox-merged.owl
+  #   abox/abox-whelk-raw.ttl
+  #   abox/abox-whelk-annotated.ttl
+  #   kb/insectKG100-kb.ttl
   # ---------------------------------------------------------------------------
   finalize:
     needs: convert
@@ -189,9 +191,6 @@ jobs:
         with:
           lfs: true
 
-      # Download all per-submission artifact directories.
-      # With merge-multiple: false, each artifact lands at:
-      #   outputs/outputs-<id>/   →  we flatten to outputs/<id>/
       - name: Download all submission outputs
         uses: actions/download-artifact@v4
         with:
@@ -207,47 +206,53 @@ jobs:
             id="${id%/}"
             mv "$dir" "$id"
           done
+          echo "=== Output tree ==="
+          find . -type f | sort
 
       - name: Pull CI Docker image
         run: docker pull sergeit215/insectkg100-repo:latest
 
-      # Build the final KB by merging all per-submission KB TTL files with riot.
-      # riot treats each file as an RDF graph and outputs their union.
-      - name: Build final insectKG100-kb.ttl
+      - name: Materialize -- merge all OWLs -> reason -> annotate -> final KB
         run: |
-          KB_FILES=$(find outputs -name "*-kb.ttl" | sort)
-          if [[ -z "$KB_FILES" ]]; then
-            echo "No per-submission KB files found — skipping final KB build"
+          mkdir -p abox kb
+
+          OWL_COUNT=$(find outputs -path "*/owl_init/*.owl" | wc -l)
+          echo "Found $OWL_COUNT OWL file(s) across all submissions"
+
+          if [[ "$OWL_COUNT" -eq 0 ]]; then
+            echo "No OWL files found -- skipping materialization"
             exit 0
           fi
 
-          echo "Merging KB files:"
-          echo "$KB_FILES"
-
           docker run --rm \
             --platform linux/amd64 \
-            -v "$PWD/outputs":/app/outputs:ro \
-            -v "$PWD/kb":/app/kb \
             --entrypoint bash \
+            -v "$PWD/outputs":/app/outputs:ro \
+            -v "$PWD/source_ontologies":/app/source_ontologies:ro \
+            -v "$PWD/ci/utils":/app/utils:ro \
+            -v "$PWD/abox":/app/abox \
+            -v "$PWD/kb":/app/kb \
+            -v "$PWD/ci/scripts/materialize.sh":/app/run.sh:ro \
             sergeit215/insectkg100-repo:latest \
-            -c 'FILES=$(find /app/outputs -name "*-kb.ttl" | sort | tr "\n" " ") && \
-                riot --out turtle $FILES > /app/kb/insectKG100-kb.ttl'
+            /app/run.sh
 
-          echo "Final KB written to kb/insectKG100-kb.ttl"
-          wc -l kb/insectKG100-kb.ttl
+      - name: Check materializer log
+        run: |
+          if [[ -f abox/materializer.log ]] && grep -q "Inconsistent dataset" abox/materializer.log; then
+            echo "::warning::Inconsistent dataset detected -- see abox/materializer.log"
+          fi
 
       - name: Commit and push outputs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add outputs/ kb/
+          git add outputs/ abox/ kb/
 
           if git diff --cached --quiet; then
-            echo "Nothing to commit — outputs unchanged"
+            echo "Nothing to commit -- outputs unchanged"
           else
             git commit -m "ci: process submissions [skip ci]"
-            # Rebase in case another run pushed while we were working
             git pull --rebase origin main
             git push
           fi
