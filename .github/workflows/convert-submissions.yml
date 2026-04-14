@@ -106,6 +106,7 @@ jobs:
             mkdir -p "outputs/$ID/$BASE"
 
             docker run --rm \
+              --platform linux/amd64 \
               -v "$PWD/submissions/extracted/$ID":/app/input:ro \
               -v "$PWD/ci/snippets":/app/snippets:ro \
               -v "$PWD/ci/utils":/app/utils:ro \
@@ -149,6 +150,7 @@ jobs:
           mkdir -p "outputs/$ID/abox" "outputs/$ID/kb"
 
           docker run --rm \
+            --platform linux/amd64 \
             --entrypoint bash \
             -v "$PWD/outputs/$ID":/app/owl_input:ro \
             -v "$PWD/source_ontologies":/app/source_ontologies:ro \
@@ -225,6 +227,7 @@ jobs:
           echo "$KB_FILES"
 
           docker run --rm \
+            --platform linux/amd64 \
             -v "$PWD/outputs":/app/outputs:ro \
             -v "$PWD/kb":/app/kb \
             --entrypoint bash \

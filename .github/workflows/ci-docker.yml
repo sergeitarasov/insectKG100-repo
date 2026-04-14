@@ -30,6 +30,7 @@ jobs:
         with:
           context: ci
           file: ci/Dockerfile
+          platforms: linux/amd64
           push: true
           tags: sergeit215/insectkg100-repo:latest
           cache-from: type=gha
