@@ -6,7 +6,7 @@ OTU = { #// OTUName:  Addd OTU/SPECIES NAME HERE
 #>>>YAML specimen
 specimen:
     id: grebennikovius_armiger_3
-    .rdfs-label: 'Carabus'
+    .rdfs-label: 'Carabus sp'
     .ott_id: 'ott_id:3328193'
     .gbif_id: 'https://www.gbif.org/species/1094065'
     .dwc-Catalog_Number:
