@@ -1,0 +1,249 @@
+name: Convert Submissions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'submissions/extracted/**'
+  workflow_dispatch:
+    inputs:
+      rebuild_all:
+        description: 'Rebuild ALL submissions (not just changed ones)'
+        type: boolean
+        default: false
+
+# Prevent concurrent runs from clobbering each other's git push
+concurrency:
+  group: convert-submissions
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Detect which submission folders changed
+  # ---------------------------------------------------------------------------
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+
+      - name: Detect changed (or all) submission IDs
+        id: detect
+        run: |
+          if [[ "${{ inputs.rebuild_all }}" == "true" ]]; then
+            # Rebuild everything: enumerate all submission folders
+            IDS=$(ls submissions/extracted/ | jq -R . | jq -sc .)
+          else
+            BASE="${{ github.event.before }}"
+            # Handle first-ever push (before SHA is all zeros)
+            if [[ "$BASE" == "0000000000000000000000000000000000000000" ]]; then
+              BASE=$(git hash-object -t tree /dev/null)
+            fi
+            IDS=$(git diff --name-only "$BASE" "${{ github.sha }}" \
+              | grep '^submissions/extracted/' \
+              | cut -d/ -f3 \
+              | sort -u \
+              | jq -R . | jq -sc .)
+          fi
+          echo "Detected submission IDs: $IDS"
+          echo "matrix=$IDS" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Convert .yphs → OWL + HTML + SHACL, then materialize per submission
+  # ---------------------------------------------------------------------------
+  convert:
+    needs: detect
+    if: needs.detect.outputs.matrix != '[]' && needs.detect.outputs.matrix != ''
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        submission: ${{ fromJson(needs.detect.outputs.matrix) }}
+      fail-fast: false   # process remaining submissions even if one fails
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false   # tbox.owl handled via cache below
+
+      # Cache tbox.owl keyed on the submission's phs-config.yaml hash.
+      # Cache hit  → skip LFS pull entirely (zero LFS bandwidth consumed).
+      # Cache miss → pull from LFS, then warm the cache for future runs.
+      - name: Cache tbox.owl
+        id: cache-tbox
+        uses: actions/cache@v4
+        with:
+          path: source_ontologies/tbox.owl
+          key: tbox-${{ hashFiles(format('submissions/extracted/{0}/phs-config.yaml', matrix.submission)) }}
+
+      - name: Pull tbox.owl from LFS (cache miss only)
+        if: steps.cache-tbox.outputs.cache-hit != 'true'
+        run: |
+          git lfs install
+          git lfs pull --include "source_ontologies/tbox.owl"
+
+      - name: Pull CI Docker image
+        run: docker pull sergeit215/insectkg100-repo:latest
+
+      # -----------------------------------------------------------------------
+      # Convert each .yphs file independently — one Docker run per file
+      # Outputs land in outputs/<id>/<yphs-basename>/
+      # -----------------------------------------------------------------------
+      - name: Convert .yphs files
+        run: |
+          ID="${{ matrix.submission }}"
+          YPHS_COUNT=0
+
+          for yphs in "submissions/extracted/$ID/"*.yphs; do
+            [[ -f "$yphs" ]] || { echo "No .yphs files found in $ID"; break; }
+            BASE=$(basename "$yphs" .yphs)
+            echo "--- Converting: $BASE ---"
+            mkdir -p "outputs/$ID/$BASE"
+
+            docker run --rm \
+              -v "$PWD/submissions/extracted/$ID":/app/input:ro \
+              -v "$PWD/ci/snippets":/app/snippets:ro \
+              -v "$PWD/ci/utils":/app/utils:ro \
+              -v "$PWD/outputs/$ID/$BASE":/app/output \
+              -v "$PWD/outputs/$ID/$BASE":/app/nl_output \
+              -v "$PWD/outputs/$ID/$BASE":/app/log-shacl \
+              -e PHS_FILE="${BASE}.yphs" \
+              -e NL_FORMAT=html \
+              -e GBIF_FLAG=0 \
+              sergeit215/insectkg100-repo:latest
+
+            YPHS_COUNT=$((YPHS_COUNT + 1))
+          done
+
+          echo "Converted $YPHS_COUNT file(s) for $ID"
+
+      # -----------------------------------------------------------------------
+      # Emit GHA warning annotations for any SHACL failures
+      # -----------------------------------------------------------------------
+      - name: Check SHACL results
+        run: |
+          ID="${{ matrix.submission }}"
+          ALL_PASS=true
+
+          for log in "outputs/$ID/"*/*.shacl.txt; do
+            [[ -f "$log" ]] || continue
+            if ! grep -q "^Conforms$" "$log"; then
+              echo "::warning file=$log::SHACL non-conformance: $(basename "$log" .shacl.txt)"
+              ALL_PASS=false
+            fi
+          done
+
+          $ALL_PASS && echo "All SHACL checks passed for $ID"
+
+      # -----------------------------------------------------------------------
+      # Materialize: merge OWLs → ABox → whelk → annotate → per-submission KB
+      # -----------------------------------------------------------------------
+      - name: Materialize
+        run: |
+          ID="${{ matrix.submission }}"
+          mkdir -p "outputs/$ID/abox" "outputs/$ID/kb"
+
+          docker run --rm \
+            --entrypoint bash \
+            -v "$PWD/outputs/$ID":/app/owl_input:ro \
+            -v "$PWD/source_ontologies":/app/source_ontologies:ro \
+            -v "$PWD/ci/utils":/app/utils:ro \
+            -v "$PWD/outputs/$ID/abox":/app/abox \
+            -v "$PWD/outputs/$ID/kb":/app/kb \
+            -v "$PWD/ci/scripts/materialize.sh":/app/run.sh:ro \
+            -e SUBMISSION_ID="$ID" \
+            sergeit215/insectkg100-repo:latest \
+            /app/run.sh
+
+      - name: Check materializer log
+        run: |
+          LOG="outputs/${{ matrix.submission }}/abox/materializer.log"
+          if [[ -f "$LOG" ]] && grep -q "Inconsistent dataset" "$LOG"; then
+            echo "::warning file=$LOG::Inconsistent dataset detected in ${{ matrix.submission }}"
+          fi
+
+      # Upload outputs for the finalize job — artifacts expire after 7 days
+      # (permanent copy is committed to git by finalize)
+      - name: Upload outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: outputs-${{ matrix.submission }}
+          path: outputs/${{ matrix.submission }}/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Collect all outputs, build final KB, commit everything to main
+  # ---------------------------------------------------------------------------
+  finalize:
+    needs: convert
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      # Download all per-submission artifact directories.
+      # With merge-multiple: false, each artifact lands at:
+      #   outputs/outputs-<id>/   →  we flatten to outputs/<id>/
+      - name: Download all submission outputs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: outputs-*
+          path: outputs/
+          merge-multiple: false
+
+      - name: Flatten artifact directories
+        run: |
+          cd outputs
+          for dir in outputs-*/; do
+            id="${dir#outputs-}"
+            id="${id%/}"
+            mv "$dir" "$id"
+          done
+
+      - name: Pull CI Docker image
+        run: docker pull sergeit215/insectkg100-repo:latest
+
+      # Build the final KB by merging all per-submission KB TTL files with riot.
+      # riot treats each file as an RDF graph and outputs their union.
+      - name: Build final insectKG100-kb.ttl
+        run: |
+          KB_FILES=$(find outputs -name "*-kb.ttl" | sort)
+          if [[ -z "$KB_FILES" ]]; then
+            echo "No per-submission KB files found — skipping final KB build"
+            exit 0
+          fi
+
+          echo "Merging KB files:"
+          echo "$KB_FILES"
+
+          docker run --rm \
+            -v "$PWD/outputs":/app/outputs:ro \
+            -v "$PWD/kb":/app/kb \
+            --entrypoint bash \
+            sergeit215/insectkg100-repo:latest \
+            -c 'FILES=$(find /app/outputs -name "*-kb.ttl" | sort | tr "\n" " ") && \
+                riot --out turtle $FILES > /app/kb/insectKG100-kb.ttl'
+
+          echo "Final KB written to kb/insectKG100-kb.ttl"
+          wc -l kb/insectKG100-kb.ttl
+
+      - name: Commit and push outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add outputs/ kb/
+
+          if git diff --cached --quiet; then
+            echo "Nothing to commit — outputs unchanged"
+          else
+            git commit -m "ci: process submissions [skip ci]"
+            # Rebase in case another run pushed while we were working
+            git pull --rebase origin main
+            git push
+          fi
