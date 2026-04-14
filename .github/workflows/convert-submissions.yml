@@ -224,6 +224,7 @@ jobs:
             exit 0
           fi
 
+          mkdir -p log-materializer
           docker run --rm \
             --platform linux/amd64 \
             --entrypoint bash \
@@ -232,14 +233,15 @@ jobs:
             -v "$PWD/ci/utils":/app/utils:ro \
             -v "$PWD/abox":/app/abox \
             -v "$PWD/kb":/app/kb \
+            -v "$PWD/log-materializer":/app/log-materializer \
             -v "$PWD/ci/scripts/materialize.sh":/app/run.sh:ro \
             sergeit215/insectkg100-repo:latest \
             /app/run.sh
 
       - name: Check materializer log
         run: |
-          if [[ -f abox/materializer.log ]] && grep -q "Inconsistent dataset" abox/materializer.log; then
-            echo "::warning::Inconsistent dataset detected -- see abox/materializer.log"
+          if [[ -f log-materializer/materializer.log ]] && grep -q "Inconsistent dataset" log-materializer/materializer.log; then
+            echo "::warning::Inconsistent dataset detected -- see log-materializer/materializer.log"
           fi
 
       - name: Commit and push outputs
@@ -247,7 +249,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add outputs/ abox/ kb/
+          git add outputs/ abox/ kb/ log-materializer/
 
           if git diff --cached --quiet; then
             echo "Nothing to commit -- outputs unchanged"

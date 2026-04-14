@@ -41,20 +41,21 @@ echo "    -> /app/abox/abox-merged.owl"
 # ---------------------------------------------------------------------------
 echo "--- Step 2: Running materializer (whelk) ---"
 
+mkdir -p /app/log-materializer
 materializer file \
     --ontology-file /app/source_ontologies/tbox.owl \
     --input /app/abox/abox-merged.owl \
     --output /app/abox/abox-whelk-raw.ttl \
     --reasoner whelk \
-    > /app/abox/materializer.log
+    > /app/log-materializer/materializer.log 2>&1
 
 echo "--- Files in /app/abox after materializer ---"
 ls -lh /app/abox/
 
 echo "    -> /app/abox/abox-whelk-raw.ttl"
 
-if grep -q "Inconsistent dataset" /app/abox/materializer.log 2>/dev/null; then
-    echo "WARNING: Inconsistent dataset detected — see abox/materializer.log"
+if grep -q "Inconsistent dataset" /app/log-materializer/materializer.log 2>/dev/null; then
+    echo "WARNING: Inconsistent dataset detected — see log-materializer/materializer.log"
 else
     echo "    Consistency check: OK"
 fi
