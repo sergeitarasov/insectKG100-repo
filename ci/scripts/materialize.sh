@@ -46,14 +46,14 @@ echo "    → /app/abox/abox-merged.owl"
 # ---------------------------------------------------------------------------
 echo "--- Step 2: Running materializer (whelk) ---"
 
-# TTL output goes to stdout → abox-whelk-raw.ttl
-# Progress/log messages go to stderr → materializer.log
+# --output writes TTL to file; stdout (progress messages) → materializer.log
+mkdir -p /app/abox
 materializer file \
     --ontology-file /app/source_ontologies/tbox.owl \
     --input /app/abox/abox-merged.owl \
+    --output /app/abox/abox-whelk-raw.ttl \
     --reasoner whelk \
-    > /app/abox/abox-whelk-raw.ttl \
-    2> /app/abox/materializer.log
+    > /app/abox/materializer.log 2>&1
 
 echo "--- Files in /app/abox after materializer ---"
 ls -lh /app/abox/
