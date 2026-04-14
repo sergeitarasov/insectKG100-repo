@@ -40,13 +40,11 @@ jobs:
           if [[ "${{ inputs.rebuild_all }}" == "true" ]]; then
             # Rebuild everything: enumerate all submission folders
             IDS=$(ls submissions/extracted/ | jq -R . | jq -sc .)
+          elif [[ -z "${{ github.event.before }}" || "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
+            # workflow_dispatch without rebuild_all, or first-ever push — process all
+            IDS=$(ls submissions/extracted/ | jq -R . | jq -sc .)
           else
-            BASE="${{ github.event.before }}"
-            # Handle first-ever push (before SHA is all zeros)
-            if [[ "$BASE" == "0000000000000000000000000000000000000000" ]]; then
-              BASE=$(git hash-object -t tree /dev/null)
-            fi
-            IDS=$(git diff --name-only "$BASE" "${{ github.sha }}" \
+            IDS=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" \
               | grep '^submissions/extracted/' \
               | cut -d/ -f3 \
               | sort -u \
