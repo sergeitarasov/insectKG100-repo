@@ -38,19 +38,39 @@ jobs:
         id: detect
         run: |
           if [[ "${{ inputs.rebuild_all }}" == "true" ]]; then
-            # Rebuild everything: enumerate all submission folders
-            IDS=$(ls submissions/extracted/ | jq -R . | jq -sc .)
+            CANDIDATES=$(ls submissions/extracted/)
           elif [[ -z "${{ github.event.before }}" || "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            # workflow_dispatch without rebuild_all, or first-ever push — process all
-            IDS=$(ls submissions/extracted/ | jq -R . | jq -sc .)
+            CANDIDATES=$(ls submissions/extracted/)
           else
-            IDS=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" \
+            CANDIDATES=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" \
               | grep '^submissions/extracted/' \
               | cut -d/ -f3 \
-              | sort -u \
-              | jq -R . | jq -sc .)
+              | sort -u)
           fi
-          echo "Detected submission IDs: $IDS"
+
+          # Only include submissions that are complete:
+          #   - phs-config.yaml must exist
+          #   - at least one .yphs file must exist
+          # Incomplete submissions (still being uploaded) are skipped silently;
+          # the final file push will trigger the workflow again and pass this check.
+          READY=""
+          for ID in $CANDIDATES; do
+            DIR="submissions/extracted/$ID"
+            if [[ ! -f "$DIR/phs-config.yaml" ]]; then
+              echo "SKIP $ID — missing phs-config.yaml"
+              continue
+            fi
+            YPHS_COUNT=$(find "$DIR" -maxdepth 1 -name "*.yphs" | wc -l)
+            if [[ "$YPHS_COUNT" -eq 0 ]]; then
+              echo "SKIP $ID — no .yphs files yet"
+              continue
+            fi
+            echo "READY $ID ($YPHS_COUNT .yphs file(s))"
+            READY="$READY $ID"
+          done
+
+          IDS=$(echo "$READY" | tr ' ' '\n' | grep -v '^$' | jq -R . | jq -sc .)
+          echo "Matrix: $IDS"
           echo "matrix=$IDS" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
