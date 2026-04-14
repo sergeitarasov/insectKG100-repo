@@ -1,0 +1,65 @@
+# =============================================================
+#  PROJECT CONFIGURATION — PLEASE FILL IN BEFORE STARTING
+# =============================================================
+#
+#  1. AUTHORS
+#     Add the full name and ORCID of each author.
+#     Get your ORCID at: https://orcid.org
+#     Format:  'First Last': https://orcid.org/0000-0000-0000-0000
+#              'Another Author': https://orcid.org/0000-0000-0000-0001
+#
+#  2. PROJECT TITLE
+#     Replace the placeholder with a short descriptive title
+#     for your phenotypic dataset.
+#
+#  All other settings below (ontologies, namespaces) are
+#  pre-configured and do not need to be changed for typical use.
+#
+# =============================================================
+
+snippet-dir: ''
+# ADD the names of the authors and ORCID (https://orcid.org)
+authors:
+  'Your Name': https://orcid.org/0000-0000-0000-0000
+# ADD a short title of your project
+project-title: "My PhenoScript Project"
+importOntologies:
+  - http://purl.obolibrary.org/obo/aism.owl
+  - http://purl.obolibrary.org/obo/colao.owl
+  - https://raw.githubusercontent.com/sergeitarasov/PhenoScript/main/phenospy_package/phenospy/package-data/phenoscript.owl
+  - http://purl.obolibrary.org/obo/pato.owl
+  - http://purl.obolibrary.org/obo/bspo.owl
+  - http://purl.obolibrary.org/obo/cdao.owl
+  - http://purl.obolibrary.org/obo/iao.owl
+  - http://purl.obolibrary.org/obo/ro.owl
+  - http://purl.obolibrary.org/obo/uo.owl
+  - http://purl.obolibrary.org/obo/bco.owl
+  - http://purl.obolibrary.org/obo/uberon/uberon-base.owl
+  - http://purl.obolibrary.org/obo/taxrank.owl
+namespace:
+  default:    http://www.w3.org/2002/07/owl#
+  others:
+    rdfs:     http://www.w3.org/2000/01/rdf-schema#
+    formats:  http://www.geneontology.org/formats/oboInOwl#
+    dc:       http://purl.org/dc/
+    hao:      http://purl.obolibrary.org/obo/HAO_
+    aism:     http://purl.obolibrary.org/obo/AISM_
+    colao:    http://purl.obolibrary.org/obo/COLAO_
+    bfo:      http://purl.obolibrary.org/obo/BFO_
+    ro:       http://purl.obolibrary.org/obo/RO_
+    obi:      http://purl.obolibrary.org/obo/OBI_
+    ncbi:     http://purl.obolibrary.org/obo/NCBITaxon_
+    iao:      http://purl.obolibrary.org/obo/IAO_
+    bspo:     http://purl.obolibrary.org/obo/BSPO_
+    pato:     http://purl.obolibrary.org/obo/PATO_
+    pato2:    http://purl.obolibrary.org/obo/pato#
+    caro:     http://purl.obolibrary.org/obo/CARO_
+    cdao:     http://purl.obolibrary.org/obo/CDAO_
+    unit:     http://purl.obolibrary.org/obo/UO_
+    dsw:      http://purl.org/dsw/
+    dwc:      http://rs.tdwg.org/dwc/terms/
+    zoo:      http://zoobank.org/
+    gbif:     https://www.gbif.org/species/
+    phs:      https://github.com/sergeitarasov/PhenoScript/PHS_
+    uberon:   http://purl.obolibrary.org/obo/UBERON_
+    taxrank:  http://purl.obolibrary.org/obo/TAXRANK_
