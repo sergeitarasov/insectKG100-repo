@@ -67,23 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: false   # tbox.owl handled via cache below
-
-      # Cache tbox.owl keyed on the submission's phs-config.yaml hash.
-      # Cache hit  → skip LFS pull entirely (zero LFS bandwidth consumed).
-      # Cache miss → pull from LFS, then warm the cache for future runs.
-      - name: Cache tbox.owl
-        id: cache-tbox
-        uses: actions/cache@v4
-        with:
-          path: source_ontologies/tbox.owl
-          key: tbox-${{ hashFiles(format('submissions/extracted/{0}/phs-config.yaml', matrix.submission)) }}
-
-      - name: Pull tbox.owl from LFS (cache miss only)
-        if: steps.cache-tbox.outputs.cache-hit != 'true'
-        run: |
-          git lfs install
-          git lfs pull --include "source_ontologies/tbox.owl"
+          lfs: false
 
       - name: Pull CI Docker image
         run: docker pull sergeit215/insectkg100-repo:latest
@@ -138,34 +122,6 @@ jobs:
             fi
           done
           $ALL_PASS && echo "All SHACL checks passed for $ID"
-
-      # -----------------------------------------------------------------------
-      # Materialize: merge OWLs → ABox → whelk → annotate → per-submission KB
-      # -----------------------------------------------------------------------
-      - name: Materialize
-        run: |
-          ID="${{ matrix.submission }}"
-          mkdir -p "outputs/$ID/abox" "outputs/$ID/kb"
-
-          docker run --rm \
-            --platform linux/amd64 \
-            --entrypoint bash \
-            -v "$PWD/outputs/$ID":/app/owl_input:ro \
-            -v "$PWD/source_ontologies":/app/source_ontologies:ro \
-            -v "$PWD/ci/utils":/app/utils:ro \
-            -v "$PWD/outputs/$ID/abox":/app/abox \
-            -v "$PWD/outputs/$ID/kb":/app/kb \
-            -v "$PWD/ci/scripts/materialize.sh":/app/run.sh:ro \
-            -e SUBMISSION_ID="$ID" \
-            sergeit215/insectkg100-repo:latest \
-            /app/run.sh
-
-      - name: Check materializer log
-        run: |
-          LOG="outputs/${{ matrix.submission }}/abox/materializer.log"
-          if [[ -f "$LOG" ]] && grep -q "Inconsistent dataset" "$LOG"; then
-            echo "::warning file=$LOG::Inconsistent dataset detected in ${{ matrix.submission }}"
-          fi
 
       - name: Upload outputs
         uses: actions/upload-artifact@v4
