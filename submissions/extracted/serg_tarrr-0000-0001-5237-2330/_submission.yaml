@@ -1,0 +1,9 @@
+name: "Serg Tarrr"
+orcid: "0000-0001-5237-2330"
+email: "sergei.tarasov@helsinki.fi"
+submitted_at: "2026-04-14T13:28:37Z"
+original_zip_name: "phs-15 - Sergey Tarasov.zip"
+file_count: 2
+files:
+  - "my_species.yphs"
+  - "phs-config.yaml"
